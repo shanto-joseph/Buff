@@ -3,8 +3,11 @@ using Buff_App.Models;
 using Buff_App.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Threading;
+using Windows.Networking.Connectivity;
 
 namespace Buff_App.ViewModels;
 
@@ -14,7 +17,10 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly INetworkPriorityService _priorityService;
     private readonly IPrivilegeService _privilegeService;
     private readonly ISpeedTestService _speedTestService;
+    private readonly DispatcherQueue _dispatcherQueue;
     private CancellationTokenSource? _pollingCts;
+    private bool _networkWatcherStarted;
+    private int _networkRefreshInFlight;
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
 
@@ -28,6 +34,7 @@ public sealed partial class MainViewModel : ObservableObject
         _priorityService = priorityService;
         _privilegeService = privilegeService;
         _speedTestService = speedTestService;
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsBusy);
         SetPrimaryCommand = new AsyncRelayCommand<AdapterViewModel>(SetPrimaryAsync, CanSetPrimary);
@@ -217,13 +224,62 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         StartPolling();
+        StartNetworkWatcher();
     }
 
     public void StopPolling()
     {
+        StopNetworkWatcher();
         _pollingCts?.Cancel();
         _pollingCts?.Dispose();
         _pollingCts = null;
+    }
+
+    private void StartNetworkWatcher()
+    {
+        if (_networkWatcherStarted)
+        {
+            return;
+        }
+
+        NetworkInformation.NetworkStatusChanged += OnNetworkStatusChanged;
+        _networkWatcherStarted = true;
+    }
+
+    private void StopNetworkWatcher()
+    {
+        if (!_networkWatcherStarted)
+        {
+            return;
+        }
+
+        NetworkInformation.NetworkStatusChanged -= OnNetworkStatusChanged;
+        _networkWatcherStarted = false;
+    }
+
+    private void OnNetworkStatusChanged(object? sender)
+    {
+        _ = _dispatcherQueue.TryEnqueue(async () =>
+        {
+            if (Interlocked.CompareExchange(ref _networkRefreshInFlight, 1, 0) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await SilentRefreshAsync(cts.Token);
+            }
+            catch
+            {
+                // Ignore transient network-state refresh errors; polling loop remains as fallback.
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _networkRefreshInFlight, 0);
+            }
+        });
     }
 
     private void StartPolling()
