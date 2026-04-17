@@ -1,0 +1,466 @@
+using System.Collections.ObjectModel;
+using Buff_App.Models;
+using Buff_App.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+
+namespace Buff_App.ViewModels;
+
+public sealed partial class MainViewModel : ObservableObject
+{
+    private readonly INetworkAdapterService _adapterService;
+    private readonly INetworkPriorityService _priorityService;
+    private readonly IPrivilegeService _privilegeService;
+    private readonly ISpeedTestService _speedTestService;
+    private CancellationTokenSource? _pollingCts;
+
+    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
+
+    public MainViewModel(
+        INetworkAdapterService adapterService,
+        INetworkPriorityService priorityService,
+        IPrivilegeService privilegeService,
+        ISpeedTestService speedTestService)
+    {
+        _adapterService = adapterService;
+        _priorityService = priorityService;
+        _privilegeService = privilegeService;
+        _speedTestService = speedTestService;
+
+        RefreshCommand = new AsyncRelayCommand(RefreshAsync, () => !IsBusy);
+        SetPrimaryCommand = new AsyncRelayCommand<AdapterViewModel>(SetPrimaryAsync, CanSetPrimary);
+        ElevateCommand = new RelayCommand(Elevate, CanElevate);
+        RunSpeedTestCommand = new AsyncRelayCommand(RunSpeedTestAsync, CanRunSpeedTest);
+    }
+
+    public ObservableCollection<AdapterViewModel> Adapters { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AdapterCount))]
+    [NotifyPropertyChangedFor(nameof(ConnectedAdapterCount))]
+    [NotifyPropertyChangedFor(nameof(SummaryTitle))]
+    [NotifyPropertyChangedFor(nameof(SummarySubtitle))]
+    [NotifyPropertyChangedFor(nameof(EmptyStateVisibility))]
+    public partial bool IsBusy { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBannerMessage))]
+    public partial string BannerTitle { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBannerMessage))]
+    public partial string BannerMessage { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial InfoBarSeverity BannerSeverity { get; set; } = InfoBarSeverity.Informational;
+
+    [ObservableProperty]
+    public partial bool IsAdministrator { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(SpeedTestStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(SpeedTestResultVisibility))]
+    [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
+    public partial bool IsSpeedTestRunning { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestResultVisibility))]
+    [NotifyPropertyChangedFor(nameof(SpeedTestStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(SpeedTestStatusMessage))]
+    [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
+    public partial SpeedTestResult? LatestSpeedTestResult { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
+    public partial double LiveDownloadMbps { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedDisplayPhaseLabel))]
+    [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
+    public partial SpeedTestPhase CurrentSpeedPhase { get; set; } = SpeedTestPhase.Download;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedResultGridVisibility))]
+    [NotifyPropertyChangedFor(nameof(DownloadResultVisibility))]
+    public partial bool ShowDownloadResult { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedResultGridVisibility))]
+    [NotifyPropertyChangedFor(nameof(UploadResultVisibility))]
+    public partial bool ShowUploadResult { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedResultGridVisibility))]
+    [NotifyPropertyChangedFor(nameof(AdditionalResultVisibility))]
+    public partial bool ShowAdditionalResults { get; set; }
+
+    public IAsyncRelayCommand RefreshCommand { get; }
+    public IAsyncRelayCommand<AdapterViewModel> SetPrimaryCommand { get; }
+    public IRelayCommand ElevateCommand { get; }
+    public IAsyncRelayCommand RunSpeedTestCommand { get; }
+
+    [ObservableProperty]
+    public partial AdapterViewModel? SelectedTestAdapter { get; set; }
+
+    public int AdapterCount => Adapters.Count;
+
+    public int ConnectedAdapterCount => Adapters.Count(a => a.Info.IsConnected);
+
+    public string SummaryTitle =>
+        Adapters.FirstOrDefault(a => a.Info.IsPreferred) is { } preferred
+            ? $"Primary route: {preferred.Info.Name}"
+            : "Pick a preferred connection";
+
+    public string SummarySubtitle =>
+        Adapters.Count == 0
+            ? "No usable adapters discovered yet."
+            : Adapters.FirstOrDefault(a => a.Info.IsPreferred) is { } preferred
+                ? preferred.Info.PreferenceSummary
+                : "Buff updates IPv4 interface metrics so Windows prefers the adapter you select.";
+
+    public bool HasBannerMessage => !string.IsNullOrWhiteSpace(BannerMessage);
+
+    public Visibility EmptyStateVisibility => Adapters.Count == 0 && !IsBusy ? Visibility.Visible : Visibility.Collapsed;
+
+    public string SpeedTestStatusTitle =>
+        IsSpeedTestRunning
+            ? "Running Speed Test…"
+            : LatestSpeedTestResult is not null
+                ? "Latest M-Lab NDT7 Result"
+                : "Ready to Test";
+
+    public string SpeedDisplayValue =>
+        IsSpeedTestRunning
+            ? LiveDownloadMbps.ToString("F2")
+            : LatestSpeedTestResult is null
+                ? "0.00"
+                : CurrentSpeedPhase == SpeedTestPhase.Upload
+                    ? LatestSpeedTestResult.UploadMbps.ToString("F2")
+                    : LatestSpeedTestResult.DownloadMbps.ToString("F2");
+
+    public string SpeedDisplayPhaseLabel =>
+        IsSpeedTestRunning
+            ? (CurrentSpeedPhase == SpeedTestPhase.Upload ? "UPLOAD" : "DOWNLOAD")
+            : "DOWNLOAD";
+
+    public string SpeedTestStatusMessage
+    {
+        get
+        {
+            if (IsSpeedTestRunning)
+                return "Testing your current route with M-Lab NDT7 over secure WebSockets.";
+            if (LatestSpeedTestResult is not null)
+                return $"{LatestSpeedTestResult.IspName} · {LatestSpeedTestResult.ServerName} · {LatestSpeedTestResult.TimestampDisplay}";
+            return "Runs a native speed test with M-Lab NDT7. No external executable required.";
+        }
+    }
+
+    public Visibility SpeedTestResultVisibility => LatestSpeedTestResult is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility SpeedResultGridVisibility =>
+        LatestSpeedTestResult is not null && (ShowDownloadResult || ShowUploadResult || ShowAdditionalResults)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+    public Visibility DownloadResultVisibility =>
+        LatestSpeedTestResult is not null && ShowDownloadResult ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility UploadResultVisibility =>
+        LatestSpeedTestResult is not null && ShowUploadResult ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility AdditionalResultVisibility =>
+        LatestSpeedTestResult is not null && ShowAdditionalResults ? Visibility.Visible : Visibility.Collapsed;
+
+    public async Task InitializeAsync(int? pendingInterfaceIndex = null)
+    {
+        IsAdministrator = _privilegeService.IsRunningAsAdministrator();
+        ElevateCommand.NotifyCanExecuteChanged();
+        RunSpeedTestCommand.NotifyCanExecuteChanged();
+
+        await RefreshAsync();
+
+        if (pendingInterfaceIndex.HasValue)
+        {
+            var pending = Adapters.FirstOrDefault(a => a.Info.InterfaceIndex == pendingInterfaceIndex.Value);
+            if (pending is null)
+                ShowBanner("Adapter not found", "The requested adapter was not found after relaunch.", InfoBarSeverity.Warning);
+            else
+                await SetPrimaryAsync(pending);
+        }
+
+        StartPolling();
+    }
+
+    public void StopPolling()
+    {
+        _pollingCts?.Cancel();
+        _pollingCts?.Dispose();
+        _pollingCts = null;
+    }
+
+    private void StartPolling()
+    {
+        StopPolling();
+        _pollingCts = new CancellationTokenSource();
+        _ = PollLoopAsync(_pollingCts.Token);
+    }
+
+    private async Task PollLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(PollingInterval, cancellationToken);
+                if (IsBusy || cancellationToken.IsCancellationRequested) continue;
+
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(10));
+                await SilentRefreshAsync(cts.Token);
+            }
+            catch (OperationCanceledException) { break; }
+            catch { /* swallow background errors */ }
+        }
+    }
+
+    private async Task SilentRefreshAsync(CancellationToken cancellationToken)
+    {
+        var adapters = await _adapterService.GetAdaptersAsync(cancellationToken);
+
+        // Remove stale
+        for (var i = Adapters.Count - 1; i >= 0; i--)
+        {
+            if (!adapters.Any(a => a.InterfaceIndex == Adapters[i].Info.InterfaceIndex))
+                Adapters.RemoveAt(i);
+        }
+
+        // Update / insert
+        for (var i = 0; i < adapters.Count; i++)
+        {
+            var fresh = adapters[i];
+            var existing = Adapters.FirstOrDefault(a => a.Info.InterfaceIndex == fresh.InterfaceIndex);
+            if (existing is null)
+            {
+                Adapters.Insert(i, new AdapterViewModel(fresh));
+            }
+            else
+            {
+                var idx = Adapters.IndexOf(existing);
+                if (idx != i) Adapters.Move(idx, i);
+                // Replace info but preserve toggle state
+                var wasVisible = Adapters[i].IsIpVisible;
+                Adapters[i] = new AdapterViewModel(fresh) { IsIpVisible = wasVisible };
+            }
+        }
+
+        RaiseSummaryProperties();
+        AutoSelectTestAdapter();
+    }
+
+    private void AutoSelectTestAdapter()
+    {
+        // Re-sync to the current instance in the list (reference may have changed after refresh)
+        if (SelectedTestAdapter is not null)
+        {
+            var match = Adapters.FirstOrDefault(a => a.Info.InterfaceIndex == SelectedTestAdapter.Info.InterfaceIndex);
+            if (match is not null)
+            {
+                SelectedTestAdapter = match;
+                return;
+            }
+        }
+
+        // Nothing selected or previous selection gone — pick the preferred adapter
+        SelectedTestAdapter = Adapters.FirstOrDefault(a => a.Info.IsPreferred) ?? Adapters.FirstOrDefault();
+    }
+
+    partial void OnIsBusyChanged(bool value)
+    {
+        RefreshCommand.NotifyCanExecuteChanged();
+        SetPrimaryCommand.NotifyCanExecuteChanged();
+        ElevateCommand.NotifyCanExecuteChanged();
+        RunSpeedTestCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(EmptyStateVisibility));
+    }
+
+    partial void OnIsSpeedTestRunningChanged(bool value)
+    {
+        OnPropertyChanged(nameof(SpeedTestStatusTitle));
+        OnPropertyChanged(nameof(SpeedTestStatusMessage));
+        OnPropertyChanged(nameof(SpeedTestResultVisibility));
+        RunSpeedTestCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task RefreshAsync()
+    {
+        await RunBusyActionAsync(async cancellationToken =>
+        {
+            ClearBanner();
+            var adapters = await _adapterService.GetAdaptersAsync(cancellationToken);
+
+            Adapters.Clear();
+            foreach (var a in adapters)
+                Adapters.Add(new AdapterViewModel(a));
+
+            RaiseSummaryProperties();
+            AutoSelectTestAdapter();
+
+            if (adapters.Count == 0)
+                ShowBanner("No adapters found", "Buff did not receive any IPv4 adapter data from Windows.", InfoBarSeverity.Warning);
+        });
+    }
+
+    private bool CanSetPrimary(AdapterViewModel? vm) =>
+        !IsBusy && vm is { Info.CanSetPrimary: true, Info.IsPreferred: false };
+
+    private bool CanElevate() => !IsBusy && !IsAdministrator;
+
+    private bool CanRunSpeedTest() => !IsBusy && !IsSpeedTestRunning;
+
+    private void Elevate()
+    {
+        try
+        {
+            _privilegeService.RestartElevated();
+            Application.Current.Exit();
+        }
+        catch (Exception ex)
+        {
+            ShowBanner("Elevation canceled", ex.Message, InfoBarSeverity.Warning);
+        }
+    }
+
+    /// <summary>Called from the system tray context menu.</summary>
+    public Task SetPrimaryFromTrayAsync(AdapterViewModel vm) => SetPrimaryAsync(vm);
+
+    private async Task SetPrimaryAsync(AdapterViewModel? vm)
+    {
+        if (vm is null) return;
+        var adapter = vm.Info;
+
+        if (!IsAdministrator)
+        {
+            try
+            {
+                _privilegeService.RestartElevated(adapter.InterfaceIndex);
+                Application.Current.Exit();
+            }
+            catch (Exception ex)
+            {
+                ShowBanner("Elevation canceled", ex.Message, InfoBarSeverity.Warning);
+            }
+            return;
+        }
+
+        await RunBusyActionAsync(async cancellationToken =>
+        {
+            var infos = Adapters.Select(a => a.Info).ToList();
+            await _priorityService.SetPrimaryAsync(adapter, infos, cancellationToken);
+            ShowBanner("Primary adapter updated", $"{adapter.Name} is now the preferred connection.", InfoBarSeverity.Success);
+            await SilentRefreshAsync(cancellationToken);
+            // After refresh, explicitly select the newly preferred adapter
+            SelectedTestAdapter = Adapters.FirstOrDefault(a => a.Info.InterfaceIndex == adapter.InterfaceIndex)
+                ?? SelectedTestAdapter;
+        });
+    }
+
+    private async Task RunSpeedTestAsync()
+    {
+        if (IsBusy || IsSpeedTestRunning) return;
+
+        LatestSpeedTestResult = null;
+        ShowDownloadResult = false;
+        ShowUploadResult = false;
+        ShowAdditionalResults = false;
+        CurrentSpeedPhase = SpeedTestPhase.Download;
+        LiveDownloadMbps = 0;
+        IsSpeedTestRunning = true;
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            var progress = new Progress<SpeedTestProgress>(snapshot =>
+            {
+                CurrentSpeedPhase = snapshot.Phase;
+                LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
+
+                // Download is considered complete when the first upload sample arrives.
+                if (snapshot.Phase == SpeedTestPhase.Upload && !ShowDownloadResult)
+                {
+                    ShowDownloadResult = true;
+                }
+            });
+            // Use the selected adapter's IP, falling back to the preferred adapter
+            var ip = SelectedTestAdapter?.Info.Ipv4Address;
+            LatestSpeedTestResult = await _speedTestService.RunAsync(ip, cts.Token, progress);
+
+            IsSpeedTestRunning = false;
+
+            ShowDownloadResult = true;
+            ShowUploadResult = true;
+            CurrentSpeedPhase = SpeedTestPhase.Upload;
+            LiveDownloadMbps = LatestSpeedTestResult.UploadMbps;
+            ShowAdditionalResults = true;
+        }
+        catch (Exception ex)
+        {
+            LatestSpeedTestResult = null;
+            ShowDownloadResult = false;
+            ShowUploadResult = false;
+            ShowAdditionalResults = false;
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = 0;
+            ShowBanner("Speed test failed", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            IsSpeedTestRunning = false;
+        }
+    }
+
+    private async Task RunBusyActionAsync(Func<CancellationToken, Task> action)
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await action(cts.Token);
+        }
+        catch (Exception ex)
+        {
+            ShowBanner("Action failed", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void RaiseSummaryProperties()
+    {
+        OnPropertyChanged(nameof(AdapterCount));
+        OnPropertyChanged(nameof(ConnectedAdapterCount));
+        OnPropertyChanged(nameof(SummaryTitle));
+        OnPropertyChanged(nameof(SummarySubtitle));
+        OnPropertyChanged(nameof(EmptyStateVisibility));
+        SetPrimaryCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ClearBanner()
+    {
+        BannerTitle = string.Empty;
+        BannerMessage = string.Empty;
+        BannerSeverity = InfoBarSeverity.Informational;
+    }
+
+    private void ShowBanner(string title, string message, InfoBarSeverity severity)
+    {
+        BannerTitle = title;
+        BannerMessage = message;
+        BannerSeverity = severity;
+    }
+}

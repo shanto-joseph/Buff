@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Buff.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Buff.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
