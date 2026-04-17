@@ -71,11 +71,26 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SpeedTestStatusTitle))]
     [NotifyPropertyChangedFor(nameof(SpeedTestStatusMessage))]
     [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
+    [NotifyPropertyChangedFor(nameof(DownloadCardDisplay))]
+    [NotifyPropertyChangedFor(nameof(UploadCardDisplay))]
+    [NotifyPropertyChangedFor(nameof(AdditionalResultVisibility))]
     public partial SpeedTestResult? LatestSpeedTestResult { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
     public partial double LiveDownloadMbps { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestProgressVisibility))]
+    public partial double SpeedTestProgressPercent { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UploadCardDisplay))]
+    public partial double LiveUploadMbps { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DownloadCardDisplay))]
+    public partial double CompletedDownloadMbps { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedDisplayPhaseLabel))]
@@ -127,7 +142,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string SpeedTestStatusTitle =>
         IsSpeedTestRunning
-            ? "Running Speed Test…"
+            ? string.Empty
             : LatestSpeedTestResult is not null
                 ? "Latest M-Lab NDT7 Result"
                 : "Ready to Test";
@@ -137,14 +152,22 @@ public sealed partial class MainViewModel : ObservableObject
             ? LiveDownloadMbps.ToString("F2")
             : LatestSpeedTestResult is null
                 ? "0.00"
-                : CurrentSpeedPhase == SpeedTestPhase.Upload
-                    ? LatestSpeedTestResult.UploadMbps.ToString("F2")
-                    : LatestSpeedTestResult.DownloadMbps.ToString("F2");
+                : LatestSpeedTestResult.DownloadMbps.ToString("F2");
 
     public string SpeedDisplayPhaseLabel =>
         IsSpeedTestRunning
             ? (CurrentSpeedPhase == SpeedTestPhase.Upload ? "UPLOAD" : "DOWNLOAD")
             : "DOWNLOAD";
+
+    public string DownloadCardDisplay =>
+        LatestSpeedTestResult is not null
+            ? LatestSpeedTestResult.DownloadDisplay
+            : $"{CompletedDownloadMbps:F2} Mbps";
+
+    public string UploadCardDisplay =>
+        LatestSpeedTestResult is not null
+            ? LatestSpeedTestResult.UploadDisplay
+            : $"{LiveUploadMbps:F2} Mbps";
 
     public string SpeedTestStatusMessage
     {
@@ -160,16 +183,18 @@ public sealed partial class MainViewModel : ObservableObject
 
     public Visibility SpeedTestResultVisibility => LatestSpeedTestResult is null ? Visibility.Collapsed : Visibility.Visible;
 
+    public Visibility SpeedTestProgressVisibility => IsSpeedTestRunning ? Visibility.Visible : Visibility.Collapsed;
+
     public Visibility SpeedResultGridVisibility =>
-        LatestSpeedTestResult is not null && (ShowDownloadResult || ShowUploadResult || ShowAdditionalResults)
+        ShowDownloadResult || ShowUploadResult || ShowAdditionalResults
             ? Visibility.Visible
             : Visibility.Collapsed;
 
     public Visibility DownloadResultVisibility =>
-        LatestSpeedTestResult is not null && ShowDownloadResult ? Visibility.Visible : Visibility.Collapsed;
+        ShowDownloadResult ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility UploadResultVisibility =>
-        LatestSpeedTestResult is not null && ShowUploadResult ? Visibility.Visible : Visibility.Collapsed;
+        ShowUploadResult ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility AdditionalResultVisibility =>
         LatestSpeedTestResult is not null && ShowAdditionalResults ? Visibility.Visible : Visibility.Collapsed;
@@ -372,47 +397,47 @@ public sealed partial class MainViewModel : ObservableObject
         if (IsBusy || IsSpeedTestRunning) return;
 
         LatestSpeedTestResult = null;
-        ShowDownloadResult = false;
-        ShowUploadResult = false;
-        ShowAdditionalResults = false;
         CurrentSpeedPhase = SpeedTestPhase.Download;
         LiveDownloadMbps = 0;
+        SpeedTestProgressPercent = 0;
         IsSpeedTestRunning = true;
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             var progress = new Progress<SpeedTestProgress>(snapshot =>
             {
-                CurrentSpeedPhase = snapshot.Phase;
-                LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
-
-                // Download is considered complete when the first upload sample arrives.
-                if (snapshot.Phase == SpeedTestPhase.Upload && !ShowDownloadResult)
+                if (!IsSpeedTestRunning)
                 {
-                    ShowDownloadResult = true;
+                    return;
                 }
+
+                CurrentSpeedPhase = snapshot.Phase;
+                if (snapshot.Phase == SpeedTestPhase.Download)
+                {
+                    LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
+                    SpeedTestProgressPercent = snapshot.ProgressPercent;
+                    return;
+                }
+
+                LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
+                SpeedTestProgressPercent = snapshot.ProgressPercent;
             });
             // Use the selected adapter's IP, falling back to the preferred adapter
             var ip = SelectedTestAdapter?.Info.Ipv4Address;
             LatestSpeedTestResult = await _speedTestService.RunAsync(ip, cts.Token, progress);
 
             IsSpeedTestRunning = false;
-
-            ShowDownloadResult = true;
-            ShowUploadResult = true;
-            CurrentSpeedPhase = SpeedTestPhase.Upload;
-            LiveDownloadMbps = LatestSpeedTestResult.UploadMbps;
-            ShowAdditionalResults = true;
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = LatestSpeedTestResult.DownloadMbps;
+            SpeedTestProgressPercent = 100;
         }
         catch (Exception ex)
         {
             LatestSpeedTestResult = null;
-            ShowDownloadResult = false;
-            ShowUploadResult = false;
-            ShowAdditionalResults = false;
             CurrentSpeedPhase = SpeedTestPhase.Download;
             LiveDownloadMbps = 0;
+            SpeedTestProgressPercent = 0;
             ShowBanner("Speed test failed", ex.Message, InfoBarSeverity.Error);
         }
         finally

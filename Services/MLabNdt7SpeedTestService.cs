@@ -12,6 +12,8 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
 {
     private static readonly Uri LocateServiceUri = new("https://locate.measurementlab.net/v2/nearest/ndt/ndt7");
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly TimeSpan DownloadTargetDuration = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan UploadTargetDuration = TimeSpan.FromSeconds(6);
 
     public async Task<SpeedTestResult> RunAsync(
         string? localIpAddress = null,
@@ -115,6 +117,8 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
         IProgress<SpeedTestProgress>? progress)
     {
         using var socket = await ConnectAsync(downloadUrl, localEndPoint, cancellationToken);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        linkedCts.CancelAfter(DownloadTargetDuration);
         var stopwatch = Stopwatch.StartNew();
         var summary = new TestRunSummary();
 
@@ -126,10 +130,12 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
                 if (stopwatch.Elapsed > TimeSpan.Zero)
                 {
                     var currentMbps = (summary.LocalBytes * 8d) / stopwatch.Elapsed.TotalSeconds / 1_000_000d;
+                    var phaseCompletion = Math.Min(stopwatch.Elapsed.TotalMilliseconds / DownloadTargetDuration.TotalMilliseconds, 1d);
                     progress?.Report(new SpeedTestProgress
                     {
                         Phase = SpeedTestPhase.Download,
-                        Mbps = Math.Round(currentMbps, 2)
+                        Mbps = Math.Round(currentMbps, 2),
+                        ProgressPercent = Math.Round(phaseCompletion * 50d, 1)
                     });
                 }
             },
@@ -137,7 +143,7 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
             {
                 summary.RegisterMeasurement(text);
             },
-            cancellationToken);
+            linkedCts.Token);
 
         stopwatch.Stop();
 
@@ -166,7 +172,7 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
 
         try
         {
-            while (stopwatch.Elapsed < TimeSpan.FromSeconds(10) &&
+                 while (stopwatch.Elapsed < UploadTargetDuration &&
                    socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
                 if (socket.State == WebSocketState.CloseReceived)
@@ -179,10 +185,12 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
                 if (stopwatch.Elapsed > TimeSpan.Zero)
                 {
                     var currentMbps = (summary.LocalBytes * 8d) / stopwatch.Elapsed.TotalSeconds / 1_000_000d;
+                    var phaseCompletion = Math.Min(stopwatch.Elapsed.TotalMilliseconds / UploadTargetDuration.TotalMilliseconds, 1d);
                     progress?.Report(new SpeedTestProgress
                     {
                         Phase = SpeedTestPhase.Upload,
-                        Mbps = Math.Round(currentMbps, 2)
+                        Mbps = Math.Round(currentMbps, 2),
+                        ProgressPercent = Math.Round(50d + (phaseCompletion * 50d), 1)
                     });
                 }
             }
@@ -217,6 +225,12 @@ public sealed class MLabNdt7SpeedTestService : ISpeedTestService
         }
 
         summary.FinalizeThroughput(stopwatch.Elapsed);
+        progress?.Report(new SpeedTestProgress
+        {
+            Phase = SpeedTestPhase.Upload,
+            Mbps = summary.ThroughputMbps,
+            ProgressPercent = 100d
+        });
         return summary;
     }
 

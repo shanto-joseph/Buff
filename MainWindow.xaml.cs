@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/tray.ico");
-        AppWindow.Resize(new SizeInt32(1200, 820));
+        AppWindow.Resize(new SizeInt32(1200, 830));
 
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {

@@ -223,42 +223,43 @@
             <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="10" Padding="0,0,12,0">
 
-                    <!-- Adapter picker -->
-                    <Border Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="14">
-                        <StackPanel Spacing="8">
-                            <TextBlock FontSize="9" FontWeight="SemiBold" Foreground="#8A9199" Text="TEST VIA" />
-                            <ComboBox
-                                ItemsSource="{Binding Adapters}"
-                                SelectedItem="{Binding SelectedTestAdapter, Mode=TwoWay}"
-                                HorizontalAlignment="Stretch"
-                                Background="#0B0F12"
-                                BorderBrush="#25303A"
-                                CornerRadius="8"
-                                Padding="12,8"
-                                AutomationProperties.Name="Speed test adapter selector">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="viewmodels:AdapterViewModel">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Border Padding="6,2" Background="{x:Bind Info.StatusBadgeBrush}" CornerRadius="4" VerticalAlignment="Center">
-                                                <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="#0B0E0F" Text="{x:Bind Info.StatusLabel}" />
-                                            </Border>
-                                            <TextBlock FontSize="13" FontWeight="Medium" Foreground="#EDEDF0" VerticalAlignment="Center" Text="{x:Bind Info.Name}" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                        </StackPanel>
-                    </Border>
+                    <!-- Unified test panel -->
+                    <Border Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="16">
+                        <StackPanel Spacing="12">
+                            <StackPanel Spacing="8">
+                                <TextBlock FontSize="9" FontWeight="SemiBold" Foreground="#8A9199" Text="TEST VIA" />
+                                <ComboBox
+                                    ItemsSource="{Binding Adapters}"
+                                    SelectedItem="{Binding SelectedTestAdapter, Mode=TwoWay}"
+                                    HorizontalAlignment="Stretch"
+                                    Background="#0B0F12"
+                                    BorderBrush="#25303A"
+                                    CornerRadius="8"
+                                    Padding="12,8"
+                                    AutomationProperties.Name="Speed test adapter selector">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="viewmodels:AdapterViewModel">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Border Padding="6,2" Background="{x:Bind Info.StatusBadgeBrush}" CornerRadius="4" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="#0B0E0F" Text="{x:Bind Info.StatusLabel}" />
+                                                </Border>
+                                                <TextBlock FontSize="13" FontWeight="Medium" Foreground="#EDEDF0" VerticalAlignment="Center" Text="{x:Bind Info.Name}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
 
-                    <!-- Fast-style hero speed card -->
-                    <Border Height="430" Padding="22,18" CornerRadius="16" BorderThickness="1" BorderBrush="#21303A">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#0D1318" Offset="0" />
-                                <GradientStop Color="#111A20" Offset="1" />
-                            </LinearGradientBrush>
-                        </Border.Background>
-                        <StackPanel Spacing="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Rectangle Height="1" Fill="#1F2A33" />
+
+                            <Border Height="400" Padding="22,12" CornerRadius="12" BorderThickness="1" BorderBrush="#1E2226">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0D1012" Offset="0" />
+                                        <GradientStop Color="#111416" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <StackPanel Spacing="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="#53C028" HorizontalAlignment="Center" Text="YOUR INTERNET SPEED" />
 
                             <StackPanel Spacing="2" HorizontalAlignment="Center">
@@ -273,6 +274,16 @@
                             </StackPanel>
 
                             <TextBlock Height="24" FontSize="13" Foreground="#95A0A9" Text="{Binding SpeedTestStatusTitle}" TextAlignment="Center" />
+                            <ProgressBar
+                                Width="260"
+                                Height="6"
+                                Foreground="#53C028"
+                                Background="#1A232C"
+                                Minimum="0"
+                                Maximum="100"
+                                Value="{Binding SpeedTestProgressPercent}"
+                                CornerRadius="3"
+                                Visibility="{Binding SpeedTestProgressVisibility}" />
                             <TextBlock Height="42" FontSize="12" Foreground="#7F8A92" Text="{Binding SpeedTestStatusMessage}" TextAlignment="Center" TextWrapping="WrapWholeWords" MaxWidth="320" />
 
                             <Button
@@ -289,65 +300,63 @@
                                     <TextBlock FontSize="14" FontWeight="SemiBold" Text="Check" />
                                 </StackPanel>
                             </Button>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
 
-                    <!-- Speedtest-style metrics -->
-                    <Grid Visibility="{Binding SpeedResultGridVisibility}" ColumnSpacing="8" RowSpacing="8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+                    <!-- Unified results panel -->
+                    <Border Visibility="{Binding SpeedTestResultVisibility}" Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="12">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="DOWNLOAD" />
+                                    <TextBlock FontSize="24" FontWeight="SemiBold" Foreground="#53C028" Text="{Binding LatestSpeedTestResult.DownloadDisplay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="3">
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="UPLOAD" />
+                                    <TextBlock FontSize="24" FontWeight="SemiBold" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.UploadDisplay}" />
+                                </StackPanel>
+                            </Grid>
 
-                        <Border Visibility="{Binding DownloadResultVisibility}" Padding="14,12" Background="#10171C" BorderBrush="#1F2A33" BorderThickness="1" CornerRadius="12">
-                            <StackPanel Spacing="3">
-                                <TextBlock FontSize="9" Foreground="#7F8A92" Text="DOWNLOAD" />
-                                <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="#53C028" Text="{Binding LatestSpeedTestResult.DownloadDisplay}" />
-                            </StackPanel>
-                        </Border>
+                            <Rectangle Height="1" Fill="#1F2A33" />
 
-                        <Border Grid.Column="1" Visibility="{Binding UploadResultVisibility}" Padding="14,12" Background="#10171C" BorderBrush="#1F2A33" BorderThickness="1" CornerRadius="12">
-                            <StackPanel Spacing="3">
-                                <TextBlock FontSize="9" Foreground="#7F8A92" Text="UPLOAD" />
-                                <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.UploadDisplay}" />
-                            </StackPanel>
-                        </Border>
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="PING" />
+                                    <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.PingDisplay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="3">
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="JITTER" />
+                                    <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.JitterDisplay}" />
+                                </StackPanel>
+                            </Grid>
 
-                        <Border Grid.Row="1" Visibility="{Binding AdditionalResultVisibility}" Padding="14,12" Background="#10171C" BorderBrush="#1F2A33" BorderThickness="1" CornerRadius="12">
-                            <StackPanel Spacing="3">
-                                <TextBlock FontSize="9" Foreground="#7F8A92" Text="PING" />
-                                <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.PingDisplay}" />
-                            </StackPanel>
-                        </Border>
+                            <Rectangle Height="1" Fill="#1F2A33" />
 
-                        <Border Grid.Row="1" Grid.Column="1" Visibility="{Binding AdditionalResultVisibility}" Padding="14,12" Background="#10171C" BorderBrush="#1F2A33" BorderThickness="1" CornerRadius="12">
-                            <StackPanel Spacing="3">
-                                <TextBlock FontSize="9" Foreground="#7F8A92" Text="JITTER" />
-                                <TextBlock FontSize="22" FontWeight="SemiBold" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.JitterDisplay}" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-
-                    <!-- Connection details -->
-                    <Border Visibility="{Binding AdditionalResultVisibility}" Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="12">
-                        <Grid ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="3">
-                                <TextBlock FontSize="9" Foreground="#7F8A92" Text="ISP" />
-                                <TextBlock FontSize="11" FontWeight="Medium" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.IspName}" TextWrapping="WrapWholeWords" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="3">
-                                <TextBlock FontSize="9" Foreground="#7F8A92" Text="SERVER" />
-                                <TextBlock FontSize="11" FontWeight="Medium" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.ServerName}" TextWrapping="WrapWholeWords" />
-                            </StackPanel>
-                        </Grid>
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="ISP" />
+                                    <TextBlock FontSize="11" FontWeight="Medium" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.IspName}" TextWrapping="WrapWholeWords" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="3">
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="SERVER" />
+                                    <TextBlock FontSize="11" FontWeight="Medium" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.ServerName}" TextWrapping="WrapWholeWords" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
                     </Border>
 
                     <TextBlock FontSize="11" Foreground="#4A5159" HorizontalAlignment="Center" Text="Powered by M-Lab NDT7 over secure WebSockets." />

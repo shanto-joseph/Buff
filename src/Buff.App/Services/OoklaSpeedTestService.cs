@@ -41,8 +41,8 @@ public sealed class OoklaSpeedTestService : ISpeedTestService
 
         var output = await RunCliAsync(args, cancellationToken);
         var result = ParseResult(output);
-        progress?.Report(new SpeedTestProgress { Phase = SpeedTestPhase.Download, Mbps = result.DownloadMbps });
-        progress?.Report(new SpeedTestProgress { Phase = SpeedTestPhase.Upload, Mbps = result.UploadMbps });
+        progress?.Report(new SpeedTestProgress { Phase = SpeedTestPhase.Download, Mbps = result.DownloadMbps, ProgressPercent = 50d });
+        progress?.Report(new SpeedTestProgress { Phase = SpeedTestPhase.Upload, Mbps = result.UploadMbps, ProgressPercent = 100d });
         return result;
     }
 

@@ -1,0 +1,53 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# Logs
+*.log
+
+# Test / coverage
+TestResults/
+*.trx
+coverage/
+*.coverage
+*.coveragexml
+
+# Publish artifacts
+publish/
+AppPackages/
+BundleArtifacts/
+
+# Generated app package artifacts
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.appxupload
+*.msixupload
+
+# Local environment files
+.env
+.env.*
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
