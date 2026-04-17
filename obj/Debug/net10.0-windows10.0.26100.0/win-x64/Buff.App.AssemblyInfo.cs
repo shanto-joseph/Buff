@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Buff.App")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0742d76acb257c849a70fd82afada85e815dbd38")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5e4324b8cc20a8067931b61f2b4a9e268c081a05")]
 [assembly: System.Reflection.AssemblyProductAttribute("Buff.App")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Buff.App")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
