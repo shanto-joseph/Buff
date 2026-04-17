@@ -9,7 +9,7 @@ namespace Buff_App;
 public sealed partial class MainWindow : Window
 {
     private const int MinimumWindowWidth = 900;
-    private const int MinimumWindowHeight = 640;
+    private const int MinimumWindowHeight = 650;
     private const int GwlWndProc = -4;
     private const uint WmGetMinMaxInfo = 0x0024;
 

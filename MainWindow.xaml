@@ -220,11 +220,11 @@
             </ScrollViewer>
 
             <!-- ── RIGHT: Speed Test ── -->
-            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel Spacing="10" Padding="0,0,12,0">
+            <ScrollViewer x:Name="RightSpeedScrollViewer" Grid.Column="1" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="10" Padding="0,0,12,0" Width="{Binding ElementName=RightSpeedScrollViewer, Path=ActualWidth}">
 
                     <!-- Unified test panel -->
-                    <Border Height="536" Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="16">
+                    <Border Height="500" Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="16" HorizontalAlignment="Stretch">
                         <StackPanel Spacing="12">
                             <StackPanel Spacing="8">
                                 <TextBlock FontSize="9" FontWeight="SemiBold" Foreground="#8A9199" Text="TEST VIA" />
@@ -252,7 +252,7 @@
 
                             <Rectangle Height="1" Fill="#1F2A33" />
 
-                            <Border Height="400" Padding="22,12" CornerRadius="12" BorderThickness="1" BorderBrush="#1E2226">
+                            <Border Height="364" Padding="22,12" CornerRadius="12" BorderThickness="1" BorderBrush="#1E2226">
                                 <Border.Background>
                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                         <GradientStop Color="#0D1012" Offset="0" />
@@ -306,7 +306,7 @@
                     </Border>
 
                     <!-- Unified results panel -->
-                    <Border Height="195" Visibility="{Binding SpeedTestResultVisibility}" Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="12">
+                    <Border Height="195" Visibility="{Binding SpeedTestResultVisibility}" Padding="14,12" Background="#0F1418" BorderBrush="#1C242C" BorderThickness="1" CornerRadius="12" HorizontalAlignment="Stretch">
                         <StackPanel Spacing="12">
                             <Grid ColumnSpacing="10">
                                 <Grid.ColumnDefinitions>
