@@ -283,7 +283,7 @@
                                 Maximum="100"
                                 Value="{Binding SpeedTestProgressPercent}"
                                 CornerRadius="3"
-                                Visibility="{Binding SpeedTestProgressVisibility}" />
+                                Opacity="{Binding IsSpeedTestRunning, Converter={StaticResource BooleanToOpacityConverter}}" />
                             <TextBlock Height="42" FontSize="12" Foreground="#7F8A92" Text="{Binding SpeedTestStatusMessage}" TextAlignment="Center" TextWrapping="WrapWholeWords" MaxWidth="320" />
 
                             <Button
