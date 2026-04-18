@@ -6,7 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:viewmodels="using:Buff_App.ViewModels"
-    Title="Buff"
+    Title="Buff | Network Manager"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="BaseAlt" />
@@ -31,14 +31,27 @@
             </Grid.ColumnDefinitions>
 
             <!-- Logo + name -->
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="10" Margin="20,0,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="4" Margin="56,0,0,0">
                 <Image
-                    Width="36"
-                    Height="36"
+                    Width="40"
+                    Height="40"
                     Source="ms-appx:///Assets/AppIcon.ico"
-                    Stretch="Uniform" />
-                <TextBlock FontSize="14" FontWeight="SemiBold" Foreground="#EDEDF0" VerticalAlignment="Center" Text="Buff"
-                    FontFamily="{StaticResource PixelFont}" />
+                    Stretch="Uniform"
+                    VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="0">
+                    <TextBlock
+                        FontSize="14"
+                        Foreground="#EDEDF0"
+                        VerticalAlignment="Center"
+                        Text="Buff"
+                        FontFamily="{StaticResource PixelFont}" />
+                    <TextBlock
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        Foreground="#EDEDF0"
+                        VerticalAlignment="Center"
+                        Text=" | Network Manager" />
+                </StackPanel>
             </StackPanel>
 
             <!-- Quit button -->

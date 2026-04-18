@@ -3,6 +3,9 @@ bin/
 bin
 obj/
 obj
+build/
+build
+
 # Visual Studio / VS Code
 .vs/
 .vscode/

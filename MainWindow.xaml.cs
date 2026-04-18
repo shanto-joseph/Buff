@@ -12,6 +12,7 @@ namespace Buff_App;
 
 public sealed partial class MainWindow : Window
 {
+    private const string WindowTitle = "Buff | Network Manager";
     private const int MinimumWindowWidth = 900;
     private const int MinimumWindowHeight = 650;
     private const int SwRestore = 9;
@@ -31,6 +32,8 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+        Title = WindowTitle;
+        AppWindow.Title = WindowTitle;
         AppWindow.SetIcon("Assets/tray.ico");
         AppWindow.Resize(new SizeInt32(1200, 830));
 

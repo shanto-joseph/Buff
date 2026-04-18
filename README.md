@@ -11,9 +11,15 @@ Buff helps you:
 - Track adapter status changes continuously
 - Run a native M-Lab NDT7 speed test (download, upload, ping, jitter) directly in the app
 
+
+
+## Download Latest Release
+
+[![Download Latest Release](https://img.shields.io/badge/Download-Latest%20Release-53C028?style=for-the-badge&logo=github&logoColor=white)](https://github.com/shanto-joseph/Buff/releases/latest)
+
 ## Screenshot
 
-Screenshot will be added soon.
+![Buff app screenshot](Assets/images/img.png)
 
 ## Features
 
@@ -52,9 +58,6 @@ Screenshot will be added soon.
 - Windows 10/11
 - .NET 10 SDK
 - Visual Studio 2022 or newer with Windows desktop development workload
-
-
-
 
 
 ## Usage Notes
