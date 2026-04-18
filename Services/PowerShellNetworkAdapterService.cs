@@ -8,18 +8,38 @@ public sealed class PowerShellNetworkAdapterService : INetworkAdapterService
     public async Task<IReadOnlyList<NetworkAdapterInfo>> GetAdaptersAsync(CancellationToken cancellationToken = default)
     {
         const string script = """
-            $adapters = Get-NetAdapter | Select-Object Name, InterfaceDescription, InterfaceIndex, @{N='Status';E={[string]$_.Status}}, @{N='MediaType';E={[string]$_.MediaType}}, @{N='PhysicalMediaType';E={[string]$_.PhysicalMediaType}};
-            $interfaces = Get-NetIPInterface -AddressFamily IPv4 | Select-Object InterfaceAlias, InterfaceIndex, InterfaceMetric, @{N='ConnectionState';E={[string]$_.ConnectionState}}, Dhcp;
-            $addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            $adapters = Get-NetAdapter |
+                Select-Object Name, InterfaceDescription, InterfaceIndex, @{N='Status';E={[string]$_.Status}}, @{N='MediaType';E={[string]$_.MediaType}}, @{N='PhysicalMediaType';E={[string]$_.PhysicalMediaType}};
+
+            $interfaceByIndex = @{};
+            Get-NetIPInterface -AddressFamily IPv4 |
+                Select-Object InterfaceIndex, InterfaceMetric, @{N='ConnectionState';E={[string]$_.ConnectionState}} |
+                ForEach-Object { $interfaceByIndex[$_.InterfaceIndex] = $_ };
+
+            $addressByIndex = @{};
+            Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
                 Where-Object { $_.IPAddress -notlike '169.254*' } |
-                Select-Object InterfaceIndex, IPAddress;
-            $routes = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-                Select-Object ifIndex, RouteMetric, NextHop, @{N='State';E={[string]$_.State}};
+                Select-Object InterfaceIndex, IPAddress |
+                ForEach-Object {
+                    if (-not $addressByIndex.ContainsKey($_.InterfaceIndex)) {
+                        $addressByIndex[$_.InterfaceIndex] = $_
+                    }
+                };
+
+            $gatewayByIndex = @{};
+            Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
+                Sort-Object InterfaceIndex, RouteMetric |
+                ForEach-Object {
+                    if (-not $gatewayByIndex.ContainsKey($_.InterfaceIndex)) {
+                        $gatewayByIndex[$_.InterfaceIndex] = $_.NextHop
+                    }
+                };
 
             $items = foreach ($adapter in $adapters) {
-                $ipInterface = $interfaces | Where-Object { $_.InterfaceIndex -eq $adapter.InterfaceIndex } | Select-Object -First 1;
-                $ipAddress = $addresses | Where-Object { $_.InterfaceIndex -eq $adapter.InterfaceIndex } | Select-Object -First 1;
-                $route = $routes | Where-Object { $_.ifIndex -eq $adapter.InterfaceIndex } | Sort-Object RouteMetric | Select-Object -First 1;
+                $ipInterface = $interfaceByIndex[$adapter.InterfaceIndex];
+                $ipAddress = $addressByIndex[$adapter.InterfaceIndex];
+                $nextHop = $gatewayByIndex[$adapter.InterfaceIndex];
 
                 [PSCustomObject]@{
                     Name = $adapter.Name;
@@ -31,10 +51,10 @@ public sealed class PowerShellNetworkAdapterService : INetworkAdapterService
                     InterfaceMetric = if ($ipInterface) { $ipInterface.InterfaceMetric } else { $null };
                     ConnectionState = if ($ipInterface) { [string]$ipInterface.ConnectionState } else { 'Unknown' };
                     IPv4Address = if ($ipAddress) { $ipAddress.IPAddress } else { $null };
-                    RouteMetric = if ($route) { $route.RouteMetric } else { $null };
-                    NextHop = if ($route) { $route.NextHop } else { $null };
-                    RouteState = if ($route) { $route.State } else { $null };
-                    HasDefaultRoute = [bool]$route
+                    RouteMetric = $null;
+                    NextHop = $nextHop;
+                    RouteState = if ($nextHop) { 'Active' } else { $null };
+                    HasDefaultRoute = [bool]$nextHop
                 }
             }
 
@@ -124,14 +144,16 @@ public sealed class PowerShellNetworkAdapterService : INetworkAdapterService
 
     private static string ResolveStatusLabel(RawNetworkAdapter adapter)
     {
-        if (string.Equals(adapter.Status, "Up", StringComparison.OrdinalIgnoreCase) &&
-            adapter.HasDefaultRoute &&
-            adapter.IPv4Address is not null)
+        var isUp = string.Equals(adapter.Status, "Up", StringComparison.OrdinalIgnoreCase);
+        var hasIpv4 = !string.IsNullOrWhiteSpace(adapter.IPv4Address);
+        var isConnectedState = string.Equals(adapter.ConnectionState, "Connected", StringComparison.OrdinalIgnoreCase);
+
+        if (isUp && hasIpv4 && (adapter.HasDefaultRoute || isConnectedState))
         {
             return "Connected";
         }
 
-        if (string.Equals(adapter.Status, "Up", StringComparison.OrdinalIgnoreCase))
+        if (isUp)
         {
             return "Limited";
         }

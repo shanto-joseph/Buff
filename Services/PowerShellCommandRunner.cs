@@ -20,12 +20,35 @@ internal static class PowerShellCommandRunner
         };
 
         using var process = new Process { StartInfo = startInfo };
+
+        using var cancellationRegistration = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Ignore kill failures during cancellation.
+            }
+        });
+
         process.Start();
 
         var standardOutputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var standardErrorTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
-        await process.WaitForExitAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
 
         var standardOutput = await standardOutputTask;
         var standardError = await standardErrorTask;

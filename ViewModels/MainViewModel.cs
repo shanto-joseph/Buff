@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Net.NetworkInformation;
 using System.Threading;
 using Windows.Networking.Connectivity;
 
@@ -18,11 +19,15 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IPrivilegeService _privilegeService;
     private readonly ISpeedTestService _speedTestService;
     private readonly DispatcherQueue _dispatcherQueue;
+    private readonly object _refreshGate = new();
     private CancellationTokenSource? _pollingCts;
+    private CancellationTokenSource? _refreshCancellationSource;
+    private Task? _refreshTask;
+    private int _refreshRequested;
     private bool _networkWatcherStarted;
-    private int _networkRefreshInFlight;
 
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(10);
 
     public MainViewModel(
         INetworkAdapterService adapterService,
@@ -214,6 +219,9 @@ public sealed partial class MainViewModel : ObservableObject
 
         await RefreshAsync();
 
+        StartNetworkWatcher();
+        StartPolling();
+
         if (pendingInterfaceIndex.HasValue)
         {
             var pending = Adapters.FirstOrDefault(a => a.Info.InterfaceIndex == pendingInterfaceIndex.Value);
@@ -222,9 +230,6 @@ public sealed partial class MainViewModel : ObservableObject
             else
                 await SetPrimaryAsync(pending);
         }
-
-        StartPolling();
-        StartNetworkWatcher();
     }
 
     public void StopPolling()
@@ -233,6 +238,11 @@ public sealed partial class MainViewModel : ObservableObject
         _pollingCts?.Cancel();
         _pollingCts?.Dispose();
         _pollingCts = null;
+
+        lock (_refreshGate)
+        {
+            _refreshCancellationSource?.Cancel();
+        }
     }
 
     private void StartNetworkWatcher()
@@ -243,6 +253,8 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         NetworkInformation.NetworkStatusChanged += OnNetworkStatusChanged;
+        NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
         _networkWatcherStarted = true;
     }
 
@@ -254,37 +266,30 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         NetworkInformation.NetworkStatusChanged -= OnNetworkStatusChanged;
+        NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
         _networkWatcherStarted = false;
     }
 
     private void OnNetworkStatusChanged(object? sender)
     {
-        _ = _dispatcherQueue.TryEnqueue(async () =>
-        {
-            if (Interlocked.CompareExchange(ref _networkRefreshInFlight, 1, 0) != 0)
-            {
-                return;
-            }
+        QueueRefreshFromNetworkChange(cancelInFlight: false);
+    }
 
-            try
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await SilentRefreshAsync(cts.Token);
-            }
-            catch
-            {
-                // Ignore transient network-state refresh errors; polling loop remains as fallback.
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _networkRefreshInFlight, 0);
-            }
-        });
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        QueueRefreshFromNetworkChange(cancelInFlight: false);
+    }
+
+    private void OnNetworkAvailabilityChanged(object? sender, EventArgs e)
+    {
+        QueueRefreshFromNetworkChange(cancelInFlight: false);
     }
 
     private void StartPolling()
     {
-        StopPolling();
+        _pollingCts?.Cancel();
+        _pollingCts?.Dispose();
         _pollingCts = new CancellationTokenSource();
         _ = PollLoopAsync(_pollingCts.Token);
     }
@@ -296,15 +301,103 @@ public sealed partial class MainViewModel : ObservableObject
             try
             {
                 await Task.Delay(PollingInterval, cancellationToken);
-                if (IsBusy || cancellationToken.IsCancellationRequested) continue;
-
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                cts.CancelAfter(TimeSpan.FromSeconds(10));
-                await SilentRefreshAsync(cts.Token);
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    QueueRefreshFromNetworkChange(cancelInFlight: false);
+                }
             }
             catch (OperationCanceledException) { break; }
             catch { /* swallow background errors */ }
         }
+    }
+
+    private void QueueRefreshFromNetworkChange(bool cancelInFlight)
+    {
+        _ = _dispatcherQueue.TryEnqueue(() =>
+        {
+            _ = QueueSilentRefreshAsync(cancelInFlight);
+        });
+    }
+
+    private Task QueueSilentRefreshAsync(bool cancelInFlight, CancellationToken cancellationToken = default)
+    {
+        Interlocked.Exchange(ref _refreshRequested, 1);
+
+        lock (_refreshGate)
+        {
+            if (_refreshTask is { IsCompleted: false })
+            {
+                if (cancelInFlight)
+                {
+                    _refreshCancellationSource?.Cancel();
+                }
+
+                return _refreshTask;
+            }
+
+            _refreshTask = RunSilentRefreshQueueAsync(cancellationToken);
+            return _refreshTask;
+        }
+    }
+
+    private async Task RunSilentRefreshQueueAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (Interlocked.Exchange(ref _refreshRequested, 0) == 1)
+            {
+                using var refreshCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+                lock (_refreshGate)
+                {
+                    _refreshCancellationSource = refreshCts;
+                }
+
+                try
+                {
+                    refreshCts.CancelAfter(RefreshTimeout);
+                    await SilentRefreshAsync(refreshCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // A newer network event superseded this refresh or it timed out.
+                }
+                catch
+                {
+                    // Ignore transient network-state refresh errors; polling loop remains as fallback.
+                }
+                finally
+                {
+                    lock (_refreshGate)
+                    {
+                        if (ReferenceEquals(_refreshCancellationSource, refreshCts))
+                        {
+                            _refreshCancellationSource = null;
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            lock (_refreshGate)
+            {
+                _refreshTask = null;
+            }
+
+            if (Interlocked.Exchange(ref _refreshRequested, 0) == 1)
+            {
+                RequestRefreshAgain();
+            }
+        }
+    }
+
+    private void RequestRefreshAgain()
+    {
+        _ = _dispatcherQueue.TryEnqueue(() =>
+        {
+            _ = QueueSilentRefreshAsync(cancelInFlight: false);
+        });
     }
 
     private async Task SilentRefreshAsync(CancellationToken cancellationToken)
