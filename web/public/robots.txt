@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://buff.notrazer.xyz/sitemap.xml

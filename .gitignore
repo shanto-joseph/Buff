@@ -5,6 +5,7 @@ obj/
 obj
 build/
 build
+node_modules/
 
 # Visual Studio / VS Code
 .vs/
