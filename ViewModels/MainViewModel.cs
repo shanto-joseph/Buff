@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using Buff_App.Models;
 using Buff_App.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -6,7 +7,10 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Threading;
 using Windows.Networking.Connectivity;
 
@@ -28,6 +32,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan SpeedTestTimeout = TimeSpan.FromSeconds(45);
 
     public MainViewModel(
         INetworkAdapterService adapterService,
@@ -76,6 +81,7 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SpeedTestStatusMessage))]
     [NotifyPropertyChangedFor(nameof(SpeedTestResultVisibility))]
     [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
+    [NotifyPropertyChangedFor(nameof(IsTestViaSelectable))]
     public partial bool IsSpeedTestRunning { get; set; }
 
     [ObservableProperty]
@@ -87,6 +93,10 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(UploadCardDisplay))]
     [NotifyPropertyChangedFor(nameof(AdditionalResultVisibility))]
     public partial SpeedTestResult? LatestSpeedTestResult { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestStatusMessage))]
+    public partial string SpeedTestAdapterName { get; set; } = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedDisplayValue))]
@@ -150,6 +160,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool HasBannerMessage => !string.IsNullOrWhiteSpace(BannerMessage);
 
+    public bool IsTestViaSelectable => !IsSpeedTestRunning;
+
     public Visibility EmptyStateVisibility => Adapters.Count == 0 && !IsBusy ? Visibility.Visible : Visibility.Collapsed;
 
     public string SpeedTestStatusTitle =>
@@ -188,7 +200,9 @@ public sealed partial class MainViewModel : ObservableObject
             if (IsSpeedTestRunning)
                 return "Testing your current route with M-Lab NDT7 over secure WebSockets.";
             if (LatestSpeedTestResult is not null)
-                return $"{LatestSpeedTestResult.IspName} · {LatestSpeedTestResult.ServerName} · {LatestSpeedTestResult.TimestampDisplay}";
+                return string.IsNullOrWhiteSpace(SpeedTestAdapterName)
+                    ? $"{LatestSpeedTestResult.IspName} · {LatestSpeedTestResult.ServerName} · {LatestSpeedTestResult.TimestampDisplay}"
+                    : $"{SpeedTestAdapterName} · {LatestSpeedTestResult.ServerName} · {LatestSpeedTestResult.TimestampDisplay}";
             return "Runs a native speed test with M-Lab NDT7. No external executable required.";
         }
     }
@@ -447,8 +461,17 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
 
-        // Nothing selected or previous selection gone — pick the preferred adapter
-        SelectedTestAdapter = Adapters.FirstOrDefault(a => a.Info.IsPreferred) ?? Adapters.FirstOrDefault();
+        // Nothing selected or previous selection gone — prefer connected adapters first.
+        SelectedTestAdapter =
+            Adapters.FirstOrDefault(a => a.Info.IsPreferred && a.Info.IsConnected && HasUsableIpv4Address(a)) ??
+            Adapters.FirstOrDefault(a => a.Info.IsConnected && HasUsableIpv4Address(a)) ??
+            Adapters.FirstOrDefault(a => a.Info.IsPreferred) ??
+            Adapters.FirstOrDefault();
+    }
+
+    partial void OnSelectedTestAdapterChanged(AdapterViewModel? value)
+    {
+        RunSpeedTestCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsBusyChanged(bool value)
@@ -492,7 +515,18 @@ public sealed partial class MainViewModel : ObservableObject
 
     private bool CanElevate() => !IsBusy && !IsAdministrator;
 
-    private bool CanRunSpeedTest() => !IsBusy && !IsSpeedTestRunning;
+    private bool CanRunSpeedTest() =>
+        !IsBusy &&
+        !IsSpeedTestRunning &&
+        SelectedTestAdapter is not null &&
+        SelectedTestAdapter.Info.IsConnected &&
+        SelectedTestAdapter.Info.HasDefaultRoute &&
+        HasUsableIpv4Address(SelectedTestAdapter);
+
+    private static bool HasUsableIpv4Address(AdapterViewModel? adapter) =>
+        adapter is not null &&
+        !string.IsNullOrWhiteSpace(adapter.Info.Ipv4Address) &&
+        !string.Equals(adapter.Info.Ipv4Address, "Unavailable", StringComparison.OrdinalIgnoreCase);
 
     private void Elevate()
     {
@@ -503,6 +537,11 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (IsElevationCanceled(ex))
+            {
+                return;
+            }
+
             ShowBanner("Elevation canceled", ex.Message, InfoBarSeverity.Warning);
         }
     }
@@ -524,6 +563,11 @@ public sealed partial class MainViewModel : ObservableObject
             }
             catch (Exception ex)
             {
+                if (IsElevationCanceled(ex))
+                {
+                    return;
+                }
+
                 ShowBanner("Elevation canceled", ex.Message, InfoBarSeverity.Warning);
             }
             return;
@@ -545,7 +589,17 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (IsBusy || IsSpeedTestRunning) return;
 
+        if (SelectedTestAdapter is not { } selectedAdapter ||
+            !selectedAdapter.Info.IsConnected ||
+            !selectedAdapter.Info.HasDefaultRoute ||
+            !HasUsableIpv4Address(selectedAdapter))
+        {
+            ShowBanner("Adapter cannot run test", "Choose an active adapter with a default route and IPv4 address before running a speed test.", InfoBarSeverity.Warning);
+            return;
+        }
+
         LatestSpeedTestResult = null;
+    SpeedTestAdapterName = string.Empty;
         CurrentSpeedPhase = SpeedTestPhase.Download;
         LiveDownloadMbps = 0;
         SpeedTestProgressPercent = 0;
@@ -553,7 +607,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var cts = new CancellationTokenSource(SpeedTestTimeout);
             var progress = new Progress<SpeedTestProgress>(snapshot =>
             {
                 if (!IsSpeedTestRunning)
@@ -572,8 +626,8 @@ public sealed partial class MainViewModel : ObservableObject
                 LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
                 SpeedTestProgressPercent = snapshot.ProgressPercent;
             });
-            // Use the selected adapter's IP, falling back to the preferred adapter
-            var ip = SelectedTestAdapter?.Info.Ipv4Address;
+            SpeedTestAdapterName = selectedAdapter.Info.Name;
+            var ip = selectedAdapter.Info.Ipv4Address;
             LatestSpeedTestResult = await _speedTestService.RunAsync(ip, cts.Token, progress);
 
             IsSpeedTestRunning = false;
@@ -581,9 +635,29 @@ public sealed partial class MainViewModel : ObservableObject
             LiveDownloadMbps = LatestSpeedTestResult.DownloadMbps;
             SpeedTestProgressPercent = 100;
         }
+        catch (OperationCanceledException)
+        {
+            LatestSpeedTestResult = null;
+            SpeedTestAdapterName = string.Empty;
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = 0;
+            SpeedTestProgressPercent = 0;
+            ShowBanner("Speed test timed out", "The selected route did not complete the test in time. Try another connected adapter.", InfoBarSeverity.Warning);
+        }
+        catch (HttpRequestException ex) when (IsReachabilityFailure(ex))
+        {
+            // Fallback: Try speed test using system default routing instead of binding to selected adapter
+            await RetrySpeedTestWithFallbackAsync(selectedAdapter, ex.Message);
+        }
+        catch (WebSocketException ex) when (IsReachabilityFailure(ex))
+        {
+            // Fallback: Try speed test using system default routing instead of binding to selected adapter
+            await RetrySpeedTestWithFallbackAsync(selectedAdapter, ex.Message);
+        }
         catch (Exception ex)
         {
             LatestSpeedTestResult = null;
+            SpeedTestAdapterName = string.Empty;
             CurrentSpeedPhase = SpeedTestPhase.Download;
             LiveDownloadMbps = 0;
             SpeedTestProgressPercent = 0;
@@ -594,6 +668,73 @@ public sealed partial class MainViewModel : ObservableObject
             IsSpeedTestRunning = false;
         }
     }
+
+    private async Task RetrySpeedTestWithFallbackAsync(AdapterViewModel selectedAdapter, string originalError)
+    {
+        try
+        {
+            // Reset progress for retry
+            LatestSpeedTestResult = null;
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = 0;
+            SpeedTestProgressPercent = 0;
+
+            using var cts = new CancellationTokenSource(SpeedTestTimeout);
+            var progress = new Progress<SpeedTestProgress>(snapshot =>
+            {
+                if (!IsSpeedTestRunning)
+                {
+                    return;
+                }
+
+                CurrentSpeedPhase = snapshot.Phase;
+                if (snapshot.Phase == SpeedTestPhase.Download)
+                {
+                    LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
+                    SpeedTestProgressPercent = snapshot.ProgressPercent;
+                    return;
+                }
+
+                LiveDownloadMbps = Math.Round(snapshot.Mbps, 2);
+                SpeedTestProgressPercent = snapshot.ProgressPercent;
+            });
+
+            // Retry without binding to specific adapter (use system default routing)
+            LatestSpeedTestResult = await _speedTestService.RunAsync(null, cts.Token, progress);
+
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = LatestSpeedTestResult.DownloadMbps;
+            SpeedTestProgressPercent = 100;
+            ShowBanner("Speed test completed (system route)", $"Switched from {selectedAdapter.Info.Name} to system default route to reach M-Lab.", InfoBarSeverity.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            LatestSpeedTestResult = null;
+            SpeedTestAdapterName = string.Empty;
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = 0;
+            SpeedTestProgressPercent = 0;
+            ShowBanner("Speed test timed out", "Both adapter-specific and system routes failed to complete in time.", InfoBarSeverity.Warning);
+        }
+        catch
+        {
+            LatestSpeedTestResult = null;
+            SpeedTestAdapterName = string.Empty;
+            CurrentSpeedPhase = SpeedTestPhase.Download;
+            LiveDownloadMbps = 0;
+            SpeedTestProgressPercent = 0;
+            ShowBanner("Adapter cannot reach M-Lab", $"{selectedAdapter.Info.Name} cannot reach M-Lab. Fallback route also failed. Check firewall/proxy settings.", InfoBarSeverity.Warning);
+        }
+    }
+
+    private static bool IsReachabilityFailure(Exception ex) =>
+        ex.InnerException is SocketException ||
+        ex.Message.Contains("locate.measurementlab.net", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("connected host has failed to respond", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsElevationCanceled(Exception ex) =>
+        ex is Win32Exception { NativeErrorCode: 1223 } ||
+        ex.Message.Contains("canceled by the user", StringComparison.OrdinalIgnoreCase);
 
     private async Task RunBusyActionAsync(Func<CancellationToken, Task> action)
     {

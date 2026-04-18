@@ -42,20 +42,52 @@
             </StackPanel>
 
             <!-- Quit button -->
-            <Button
-                Grid.Column="1"
-                x:Name="QuitButton"
-                Padding="14,0"
-                VerticalAlignment="Stretch"
-                Background="Transparent"
-                BorderThickness="0"
-                Click="QuitButton_Click"
-                ToolTipService.ToolTip="Quit Buff">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon FontSize="12" Glyph="&#xE711;" Foreground="#8A9199" />
-                    <TextBlock FontSize="12" Foreground="#8A9199" Text="Quit" />
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="2">
+                <Button
+                    x:Name="InfoButton"
+                    Width="40"
+                    Height="40"
+                    Padding="0"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="InfoButton_Click"
+                    PointerEntered="InfoButton_PointerEntered"
+                    PointerExited="InfoButton_PointerExited"
+                    ToolTipService.ToolTip="About Buff"
+                    AutomationProperties.Name="About Buff">
+                    <Button.Resources>
+                        <SolidColorBrush x:Key="ButtonBackground" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+                    </Button.Resources>
+                    <FontIcon
+                        x:Name="InfoIcon"
+                        FontSize="18"
+                        Glyph="&#xE946;"
+                        Foreground="#8A9199"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                </Button>
+
+                <Button
+                    Grid.Column="1"
+                    x:Name="QuitButton"
+                    Padding="14,0"
+                    VerticalAlignment="Stretch"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="QuitButton_Click"
+                    ToolTipService.ToolTip="Quit Buff"
+                    AutomationProperties.Name="Quit Buff">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="12" Glyph="&#xE711;" Foreground="#8A9199" />
+                        <TextBlock FontSize="12" Foreground="#8A9199" Text="Quit" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <!-- Main two-column layout -->
@@ -231,6 +263,7 @@
                                 <ComboBox
                                     ItemsSource="{Binding Adapters}"
                                     SelectedItem="{Binding SelectedTestAdapter, Mode=TwoWay}"
+                                    IsEnabled="{Binding IsTestViaSelectable}"
                                     HorizontalAlignment="Stretch"
                                     Background="#0B0F12"
                                     BorderBrush="#25303A"
@@ -348,8 +381,8 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="3">
-                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="ISP" />
-                                    <TextBlock FontSize="11" FontWeight="Medium" Foreground="#EDEDF0" Text="{Binding LatestSpeedTestResult.IspName}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                    <TextBlock FontSize="9" Foreground="#7F8A92" Text="NETWORK" />
+                                    <TextBlock FontSize="11" FontWeight="Medium" Foreground="#EDEDF0" Text="{Binding SpeedTestAdapterName}" TextTrimming="CharacterEllipsis" MaxLines="1" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Spacing="3">
                                     <TextBlock FontSize="9" Foreground="#7F8A92" Text="SERVER" />
